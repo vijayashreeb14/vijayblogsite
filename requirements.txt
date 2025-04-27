@@ -3,3 +3,4 @@ django
 Pillow
 sqlparse
 tzdata
+gunicorn==21.2.0
