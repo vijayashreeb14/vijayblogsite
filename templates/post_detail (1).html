@@ -1,0 +1,104 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script>{% extends 'base.html' %}
+
+{% block content %}
+  <h1>{{ post.title }}</h1>
+  <p>{{ post.content }}</p>
+  <p>Posted by {{ post.author.username }} on {{ post.created_at }}</p>
+
+  <!-- Save/Unsave Button -->
+  {% if user.is_authenticated %}
+    <button id="save-btn" data-post-id="{{ post.id }}" class="{% if is_saved %}btn btn-danger{% else %}btn btn-primary{% endif %}">
+      {% if is_saved %}Unsave{% else %}Save{% endif %}
+    </button>
+  {% endif %}
+
+  <!-- Reviews Section -->
+  <h3>Reviews</h3>
+  {% for review in reviews %}
+    <div>
+      <p><strong>{{ review.user.username }}</strong> (Rating: {{ review.rating }}/5)</p>
+      <p>{{ review.content }}</p>
+      <small>{{ review.created_at }}</small>
+    </div>
+  {% empty %}
+    <p>No reviews yet.</p>
+  {% endfor %}
+
+  <!-- Review Form -->
+  {% if user.is_authenticated %}
+    <h3>Add a Review</h3>
+    <form method="POST">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit" class="btn btn-success">Submit Review</button>
+    </form>
+  {% else %}
+    <p><a href="{% url 'login' %}">Log in</a> to add a review.</p>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    document.getElementById('save-btn').addEventListener('click', function() {
+      const postId = this.dataset.postId;
+      fetch(`/post/${postId}/save/`, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': '{{ csrf_token }}',
+          'Content-Type': 'application/json'
+        }
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.saved) {
+          this.textContent = 'Unsave';
+          this.classList.remove('btn-primary');
+          this.classList.add('btn-danger');
+        } else {
+          this.textContent = 'Save';
+          this.classList.remove('btn-danger');
+          this.classList.add('btn-primary');
+        }
+      });
+    });
+  </script>
+{% endblock %}
